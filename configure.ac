@@ -1,135 +1,196 @@
-dnl
-dnl Autoconf configuration for ModSecurity
-dnl
-dnl     Use ./autogen.sh to produce a configure script
-dnl
+# ModSecurity configure.ac
 
-AC_PREREQ(2.63)
 
-AC_INIT([modsecurity], [2.9], [support@modsecurity.org])
+# Get the hash of the last commit, to be used if it is not an
+# official release.
+AC_DEFUN([MSC_GIT_HASH], m4_esyscmd_s(git log -1 --format="%h" --abbrev-commit))
+AC_DEFUN([MSC_MAJOR], m4_esyscmd_s(cat headers/modsecurity/modsecurity.h | grep "define MODSECURITY_MAJOR " | awk {'print $3'} | sed 's/\"//g'))
+AC_DEFUN([MSC_MINOR], m4_esyscmd_s(cat headers/modsecurity/modsecurity.h | grep "define MODSECURITY_MINOR " | awk {'print $3'} | sed 's/\"//g'))
+AC_DEFUN([MSC_PATCHLEVEL], m4_esyscmd_s(cat headers/modsecurity/modsecurity.h | grep "define MODSECURITY_PATCHLEVEL " | awk {'print $3'} | sed 's/\"//g'))
+AC_DEFUN([MSC_TAG], m4_esyscmd_s(cat headers/modsecurity/modsecurity.h | grep "define MODSECURITY_FTAG " | awk {'print $3'} | sed 's/\"//g'))
 
+
+# Version definition to be further used by AC_INIT and 
+# .so file naming.
+m4_define([msc_version_major], [MSC_MAJOR])
+m4_define([msc_version_minor], [MSC_MINOR])
+m4_define([msc_version_patchlevel], [MSC_PATCHLEVEL])
+
+m4_define([msc_version_c_plus_a], [m4_eval(msc_version_major + msc_version_minor)])
+
+
+m4_define([msc_version],
+    [msc_version_major.msc_version_minor])
+
+m4_define([msc_version_with_patchlevel],
+    [msc_version_major.msc_version_minor.msc_version_patchlevel])
+
+m4_define([msc_version_git],
+    [m4_esyscmd_s(git describe)])
+
+m4_define([msc_version_info],
+    [msc_version_c_plus_a:msc_version_patchlevel:msc_version_minor])
+
+
+# Project Information
+AC_INIT([modsecurity], [3.0], [security@modsecurity.org])
+
+
+# General definitions
 AC_CONFIG_MACRO_DIR([build])
-AC_CONFIG_SRCDIR([LICENSE])
-AC_CONFIG_HEADERS([apache2/modsecurity_config_auto.h])
-AC_CONFIG_AUX_DIR([build])
 AC_PREFIX_DEFAULT([/usr/local/modsecurity])
 
-AM_INIT_AUTOMAKE([-Wall foreign subdir-objects])
-m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
 
-LT_PREREQ([2.2])
-LT_INIT([dlopen])
+# General automake options.
+AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects])
 
-# Checks for programs.
-AC_PROG_AWK
-AC_PROG_CC
-AC_PROG_CPP
-AC_PROG_INSTALL
-AC_PROG_LN_S
+
+# Check for dependencies (C++, AR, Lex, Yacc and Make)
+AC_PROG_CXX
+AM_PROG_AR
 AC_PROG_MAKE_SET
-AC_PROG_GREP
-AC_PATH_PROGS(PERL, [perl perl5], )
-AC_PATH_PROGS(ENV_CMD, [env printenv], )
+
+
+# Check if the compiler is c++11 compatible.
+# AX_CXX_COMPILE_STDCXX_11(,mandatory)
+
+# Check for libinjection
+if ! test -f "others/libinjection/src/libinjection_html5.c"; then
+AC_MSG_ERROR([\
+
+
+  libInjection was not found within ModSecurity source directory.
+
+  libInjection code is available as part of ModSecurity source code in a format
+  of a git-submodule. git-submodule allow us to specify the correct version of
+  libInjection and still uses the libInjection repository to download it.
+
+  You can download libInjection using git:
+
+     $ git submodule init
+     $ git submodule update
+
+   ])
+fi
+# Libinjection version
+AC_DEFUN([LIBINJECTION_VERSION], m4_esyscmd_s(cd "others/libinjection" && git describe && cd ../..))
+
+# SecLang test version
+AC_DEFUN([SECLANG_TEST_VERSION], m4_esyscmd_s(cd "test/test-cases/secrules-language-tests" && git log -1 --format="%h" --abbrev-commit && cd ../../..))
+
+
+# Check for yajl
+PROG_YAJL
+
+AM_CONDITIONAL([YAJL_VERSION], [test "$YAJL_VERSION" != ""])
+
+# Check for LibGeoIP
+PROG_GEOIP
+AM_CONDITIONAL([GEOIP_CFLAGS], [test "GEOIP_CFLAGS" != ""])
+
+# Check for MaxMind
+PROG_MAXMIND
+AM_CONDITIONAL([MAXMIND_CFLAGS], [test "MAXMIND_CFLAGS" != ""])
+
+
+# Check for LMDB
+PROG_LMDB
+AM_CONDITIONAL([LMDB_CFLAGS], [test "LMDB_CFLAGS" != ""])
+
+# Check for SSDEEP
+CHECK_SSDEEP
+AM_CONDITIONAL([SSDEEP_CFLAGS], [test "SSDEEP_CFLAGS" != ""])
+
+# Check for LUA
+CHECK_LUA
+AM_CONDITIONAL([LUA_CFLAGS], [test "LUA_CFLAGS" != ""])
+
+
+#
+# Check for curl
+#
+CHECK_CURL
+
+if ! test -z "${CURL_VERSION}"; then
+  AC_DEFINE([MSC_WITH_CURL], [1], [Define if libcurl is available])
+fi
+
+
+#
+# Check for LibXML
+#
+CHECK_LIBXML2
+
+
+#
+# Check for libpcre
+#
+CHECK_PCRE
+
 
 # Checks for header files.
 AC_HEADER_STDC
-AC_CHECK_HEADERS([fcntl.h limits.h stdlib.h string.h unistd.h sys/types.h sys/stat.h sys/utsname.h])
+AC_CHECK_HEADERS([string])
+AC_CHECK_HEADERS([iostream])
+AC_CHECK_HEADERS([sys/utsname.h])
 
-# Checks for typedefs, structures, and compiler characteristics.
-AC_C_CONST
-AC_C_INLINE
-AC_C_RESTRICT
-AC_TYPE_PID_T
-AC_TYPE_SIZE_T
-AC_STRUCT_TM
-AC_TYPE_UINT8_T
 
-# Checks for library functions.
-AC_FUNC_MALLOC
-AC_FUNC_MEMCMP
-AC_CHECK_FUNCS([atexit getcwd memmove memset strcasecmp strchr strdup strerror strncasecmp strrchr strstr strtol fchmod strcasestr])
+# ??
+LT_INIT([dlopen])
 
-# Some directories
-MSC_BASE_DIR=`pwd`
-MSC_PKGBASE_DIR="$MSC_BASE_DIR/.."
-MSC_TEST_DIR="$MSC_BASE_DIR/tests"
-MSC_REGRESSION_DIR="$MSC_TEST_DIR/regression"
-MSC_REGRESSION_SERVERROOT_DIR="$MSC_REGRESSION_DIR/server_root"
-MSC_REGRESSION_CONF_DIR="$MSC_REGRESSION_SERVERROOT_DIR/conf"
-MSC_REGRESSION_LOGS_DIR="$MSC_REGRESSION_SERVERROOT_DIR/logs"
-MSC_REGRESSION_DOCROOT_DIR="$MSC_REGRESSION_SERVERROOT_DIR/htdocs"
-
-AC_SUBST(MSC_BASE_DIR)
-AC_SUBST(MSC_PKGBASE_DIR)
-AC_SUBST(MSC_TEST_DIR)
-AC_SUBST(MSC_REGRESSION_DIR)
-AC_SUBST(MSC_REGRESSION_SERVERROOT_DIR)
-AC_SUBST(MSC_REGRESSION_CONF_DIR)
-AC_SUBST(MSC_REGRESSION_LOGS_DIR)
-AC_SUBST(MSC_REGRESSION_DOCROOT_DIR)
-
-### Configure Options
-
-#OS type
-
+# Identify platform
 AC_CANONICAL_HOST
-CANONICAL_HOST=$host
-
-AH_TEMPLATE([AIX],     [Define if the operating system is AIX])
-AH_TEMPLATE([LINUX],   [Define if the operating system is LINUX])
-AH_TEMPLATE([OPENBSD], [Define if the operating system is OpenBSD])
-AH_TEMPLATE([SOLARIS], [Define if the operating system is SOLARIS])
-AH_TEMPLATE([HPUX],    [Define if the operating system is HPUX])
-AH_TEMPLATE([MACOSX],  [Define if the operating system is Macintosh OSX])
-AH_TEMPLATE([FREEBSD], [Define if the operating system is FREEBSD])
-AH_TEMPLATE([NETBSD],  [Define if the operating system is NetBSD])
-
 
 case $host in
   *-*-aix*)
     echo "Checking platform... Identified as AIX"
-    aixos=true
+    AC_DEFINE([AIX], [1], [Define if the operating system is AIX])
+    PLATFORM="AIX"
     ;;
   *-*-hpux*)
     echo "Checking platform... Identified as HPUX"
-    hpuxos=true
+    AC_DEFINE([HPUX], [1], [Define if the operating system is HPUX])
+    PLATFORM="HPUX"
     ;;
   *-*-darwin*)
     echo "Checking platform... Identified as Macintosh OS X"
-    macos=true
+    AC_DEFINE([MACOSX], [1], [Define if the operating system is Macintosh OSX])
+    PLATFORM="MacOSX"
     ;;
   *-*-linux*)
     echo "Checking platform... Identified as Linux"
-    linuxos=true
-        case "${host_cpu}" in
-            s390x)
-            cpu_type="-DLINUX_S390"
-        ;;
-        esac
+    AC_DEFINE([LINUX], [1], [Define if the operating system is LINUX])
+    PLATFORM="Linux"
     ;;
   *-*-solaris*)
     echo "Checking platform... Identified as Solaris"
-    solarisos=true
+    AC_DEFINE([SOLARIS], [1], [Define if the operating system is SOLARIS])
+    PLATFORM="Solaris"
     ;;
   *-*-freebsd*)
     echo "Checking platform... Identified as FreeBSD"
-    freebsdos=true
+    AC_DEFINE([FREEBSD], [1], [Define if the operating system is FREEBSD])
+    PLATFORM="FreeBSD"
     ;;
   *-*-netbsd*)
     echo "Checking platform... Identified as NetBSD"
-    netbsdos=true
+    AC_DEFINE([NETBSD], [1], [Define if the operating system is NETBSD])
+    PLATFORM="NetBSD"
     ;;
   *-*-openbsd*)
     echo "Checking platform... Identified as OpenBSD"
-    openbsdos=true
+    AC_DEFINE([OPENBSD], [1], [Define if the operating system is OPENBSD])
+    PLATFORM="OpenBSD"
     ;;
   *-*-kfreebsd*)
     echo "Checking platform... Identified as kFreeBSD, treating as linux"
-    linuxos=true
+    AC_DEFINE([FREEBSD], [1], [Define if the operating system is FREEBSD])
+    PLATFORM="kFreeBSD"
     ;;
   *-*-gnu*.*)
     echo "Checking platform... Identified as HURD, treating as linux"
-    linuxos=true
+    AC_DEFINE([LINUX], [1], [Define if the operating system is LINUX])
+    PLATFORM="HURD"
     ;;
        *)
     echo "Unknown CANONICAL_HOST $host"
@@ -137,636 +198,412 @@ case $host in
     ;;
 esac
 
-AM_CONDITIONAL([AIX], [test x$aixos = xtrue])
-AM_CONDITIONAL([HPUX], [test x$hpuxos = xtrue])
-AM_CONDITIONAL([MACOSX], [test x$macos = xtrue])
-AM_CONDITIONAL([LINUX], [test x$linuxos = xtrue])
-AM_CONDITIONAL([LINUX390], [test x$linuxos390 = xtrue])
-AM_CONDITIONAL([SOLARIS], [test x$solarisos = xtrue])
-AM_CONDITIONAL([FREEBSD], [test x$freebsdos = xtrue])
-AM_CONDITIONAL([OPENBSD], [test x$openbsdos = xtrue])
-AM_CONDITIONAL([NETBSD], [test x$netbsdos = xtrue])
+# Variables to be used inside the Makefile.am files.
+MSC_BASE_DIR=`pwd`
+AC_SUBST([MSC_BASE_DIR])
 
-#Subdirs
-TOPLEVEL_SUBDIRS="tools"
+MSC_VERSION_INFO=msc_version_info
+AC_SUBST([MSC_VERSION_INFO])
 
-# Apache2 Module
-AC_ARG_ENABLE(apache2-module,
-              AS_HELP_STRING([--disable-apache2-module],
-                             [Disable building Apache2 module.]),
-[
-  if test "$enableval" != "no"; then
-    build_apache2_module=1
-  else
-    build_apache2_module=0
-  fi
-],
-[
-  build_apache2_module=1
-])
-AM_CONDITIONAL([BUILD_APACHE2_MODULE], [test "$build_apache2_module" -eq 1])
-if test "$build_apache2_module" -eq 1; then
-  TOPLEVEL_SUBDIRS="$TOPLEVEL_SUBDIRS apache2"
+MSC_VERSION_WITH_PATCHLEVEL=msc_version_with_patchlevel
+AC_SUBST([MSC_VERSION_WITH_PATCHLEVEL])
+
+MSC_VERSION=msc_version
+AC_SUBST([MSC_VERSION])
+
+MSC_GIT_VERSION=msc_version_git
+AC_SUBST([MSC_GIT_VERSION])
+
+
+AC_ARG_ENABLE(debug-logs,
+    [AC_HELP_STRING([--disable-debug-logs],[Turn off the SecDebugLog feature])],
+
+    [case "${enableval}" in
+        yes) debugLogs=true ;;
+        no)  debugLogs=false ;;
+        *) AC_MSG_ERROR(bad value ${enableval} for --enable-debug-logs) ;;
+    esac],
+
+    [debugLogs=true]
+    )
+if test "$debugLogs" != "true"; then
+    MODSEC_NO_LOGS="-DNO_LOGS=1"
+    AC_SUBST(MODSEC_NO_LOGS)
 fi
 
 
-# Standalone Module
-AC_ARG_ENABLE(standalone-module,
-              AS_HELP_STRING([--enable-standalone-module],
-                             [Enable building standalone module.]),
-[
-  if test "$enableval" != "no"; then
-    build_standalone_module=1
-  else
-    build_standalone_module=0
-  fi
-],
-[
-  build_standalone_module=0
-])
-AM_CONDITIONAL([BUILD_STANDALONE_MODULE], [test "$build_standalone_module" -eq 1])
-if test "$build_standalone_module" -eq 1; then
-  TOPLEVEL_SUBDIRS="$TOPLEVEL_SUBDIRS standalone"
+# Fuzzer
+AC_ARG_ENABLE(afl-fuzz,
+    [AC_HELP_STRING([--enable-afl-fuzz],[Turn on the afl fuzzer compilation utilities])],
+
+    [case "${enableval}" in
+        yes) aflFuzzer=true ;;
+        no)  aflFuzzer=false ;;
+        *) AC_MSG_ERROR(bad value ${enableval} for --enable-afl-fuzz) ;;
+    esac],
+
+    [aflFuzzer=false]
+    )
+
+# Examples
+AC_ARG_ENABLE(examples,
+    [AC_HELP_STRING([--enable-examples],[Turn on the examples compilation (default option)])],
+
+    [case "${enableval}" in
+        yes) buildExamples=true ;;
+        no)  buildExamples=false ;;
+        *) AC_MSG_ERROR(bad value ${enableval} for --enable-examples) ;;
+    esac],
+
+    [buildExamples=true]
+    )
+
+# Parser
+AC_ARG_ENABLE(parser-generation,
+    [AC_HELP_STRING([--enable-parser-generation],[Enables parser generation during the build])],
+
+    [case "${enableval}" in
+        yes) buildParser=true ;;
+        no)  buildParser=false ;;
+        *) AC_MSG_ERROR(bad value ${enableval} for --enable-parser-generation) ;;
+    esac],
+
+    [buildParser=false]
+    )
+
+# Mutex
+AC_ARG_ENABLE(mutex-on-pm,
+    [AC_HELP_STRING([--enable-mutex-on-pm],[Treats pm operations as a critical section])],
+
+    [case "${enableval}" in
+        yes) mutexPm=true ;;
+        no)  mutexPm=false ;;
+        *) AC_MSG_ERROR(bad value ${enableval} for --enable-mutex-on-pm) ;;
+    esac],
+
+    [mutexPm=false]
+    )
+if test "$mutexPm" == "true"; then
+    MODSEC_MUTEX_ON_PM="-DMUTEX_ON_PM=1"
+    AC_SUBST(MODSEC_MUTEX_ON_PM)
 fi
 
 
-# Extensions
-AC_ARG_ENABLE(extentions,
-              AS_HELP_STRING([--enable-extentions],
-                             [Enable building extension.]),
-[
-  if test "$enableval" != "no"; then
-    build_extentions=1
-  else
-    build_extentions=0
-  fi
-],
-[
-  build_extentions=0
-])
-AM_CONDITIONAL([BUILD_extentions], [test "$build_extentions" -eq 1])
-if test "$build_extentions" -eq 1; then
-  TOPLEVEL_SUBDIRS="$TOPLEVEL_SUBDIRS ext"
-fi
+if test $buildParser = true; then
+    AC_PROG_YACC
+    AC_PROG_LEX
+    AC_PATH_PROG([FLEX], [flex])
+    test "x$FLEX" = "x" && AC_MSG_ERROR([flex is needed to build ModSecurity])
 
+    AC_PATH_PROG([BISON], [bison])
+    test "x$BISON" = "x" && AC_MSG_ERROR([bison is needed to build ModSecurity])
 
-# Mlogc
-AC_ARG_ENABLE(mlogc,
-              AS_HELP_STRING([--disable-mlogc],
-                             [Disable building mlogc.]),
-[
-  if test "$enableval" != "no"; then
-    build_mlogc=1
-  else
-    build_mlogc=0
-  fi
-],
-[
-  build_mlogc=1
-])
-
-CHECK_CURL()
-
-if test -z "${CURL_VERSION}"; then
-  AC_MSG_NOTICE([NOTE: mlgoc compilation was disabled.])
-  build_mlogc=0
-fi
-
-AM_CONDITIONAL([BUILD_MLOGC], [test "$build_mlogc" -eq 1])
-if test "$build_mlogc" -eq 1; then
-  TOPLEVEL_SUBDIRS="$TOPLEVEL_SUBDIRS mlogc"
-fi
-
-# Audit Log Parser v2 (ALP2)
-AC_ARG_ENABLE(alp2,
-              AS_HELP_STRING([--enable-alp2],
-                             [Enable building audit log parser lib.]),
-[
-  if test "$enableval" != "no"; then
-    build_alp2=1
-  else
-    build_alp2=0
-  fi
-],
-[
-  build_alp2=0
-])
-AM_CONDITIONAL([BUILD_ALP2], [test "$build_alp2" -eq 1])
-if test "$build_alp2" -eq 1; then
-  TOPLEVEL_SUBDIRS="$TOPLEVEL_SUBDIRS alp2"
-fi
-
-# Documentation
-AC_ARG_ENABLE(docs,
-              AS_HELP_STRING([--enable-docs],
-                             [Enable building documentation.]),
-[
-  if test "$enableval" != "no"; then
-    build_docs=1
-  else
-    build_docs=0
-  fi
-],
-[
-  build_docs=0
-])
-AM_CONDITIONAL([BUILD_DOCS], [test "$build_docs" -eq 1])
-if test "$build_docs" -eq 1; then
-    TOPLEVEL_SUBDIRS="$TOPLEVEL_SUBDIRS docs"
-fi
-
-
-# Add PCRE Studying
-
-AC_ARG_ENABLE(pcre-study,
-              AS_HELP_STRING([--enable-pcre-study],
-                             [Enable PCRE regex studying during configure.]),
-[
-  if test "$enableval" != "no"; then
-    pcre_study='-DWITH_PCRE_STUDY'
-    MODSEC_EXTRA_CFLAGS="$MODSEC_EXTRA_CFLAGS $pcre_study"
-  else
-    pcre_study=''
-  fi
-],
-[
-  pcre_study='-DWITH_PCRE_STUDY'
-])
-
-# Add PCRE JIT
-
-AC_ARG_ENABLE(pcre-jit,
-              AS_HELP_STRING([--enable-pcre-jit],
-                             [Enable PCRE regex jit support during configure.]),
-[
-  if test "$enableval" != "no"; then
-    pcre_jit='-DWITH_PCRE_JIT'
-    MODSEC_EXTRA_CFLAGS="$MODSEC_EXTRA_CFLAGS $pcre_jit"
-  else
-    pcre_jit=''
-  fi
-],
-[
-  pcre_jit=''
-])
-
-
-# Limit PCRE matching
-AC_ARG_ENABLE(pcre-match-limit,
-              AS_HELP_STRING([--enable-pcre-match-limit],
-                             [Enable PCRE regex match limit during configure.]),
-[
-  if test "$enableval" = "yes"; then
-    AC_MSG_ERROR([PCRE match limits require a numeric value])
-  elif test "$enableval" = "no"; then
-    pcre_match_limit=''
-  else
-    pcre_match_limit="-DMODSEC_PCRE_MATCH_LIMIT=$enableval"
-    MODSEC_EXTRA_CFLAGS="$MODSEC_EXTRA_CFLAGS $pcre_match_limit"
-  fi
-],
-[
-  pcre_match_limit='-DMODSEC_PCRE_MATCH_LIMIT=1500'
-])
-
-# Limit PCRE matching recursion
-AC_ARG_ENABLE(pcre-match-limit-recursion,
-              AS_HELP_STRING([--enable-pcre-match-limit-recursion],
-                             [Enable PCRE regex match limit recursion during configure.]),
-[
-  if test "$enableval" = "yes"; then
-    AC_MSG_ERROR([PCRE match limits require a numeric value])
-  elif test "$enableval" = "no"; then
-    pcre_match_limit_recursion=''
-  else
-    pcre_match_limit_recursion="-DMODSEC_PCRE_MATCH_LIMIT_RECURSION=$enableval"
-    MODSEC_EXTRA_CFLAGS="$MODSEC_EXTRA_CFLAGS $pcre_match_limit_recursion"
-  fi
-],
-[
-  pcre_match_limit_recursion='-DMODSEC_PCRE_MATCH_LIMIT_RECURSION=1500'
-])
-
-# Enable Lua per transaction cache
-AC_ARG_ENABLE(lua-cache,
-              AS_HELP_STRING([--enable-lua-cache],
-                             [Enable Lua per transaction cache.]),
-[
-  if test "$enableval" != "no"; then
-    lua_cache="-DCACHE_LUA"
-    MODSEC_EXTRA_CFLAGS="$MODSEC_EXTRA_CFLAGS $lua_cache"
-  else
-    lua_cache=
-  fi
-],
-[
-  lua_cache=
-])
-
-# Enable phase-1 in post_read_request
-AC_ARG_ENABLE(htaccess-config,
-              AS_HELP_STRING([--enable-htaccess-config],
-                             [Enable some mod_security directives into htaccess files.]),
-[
-  if test "$enableval" != "no"; then
-    htaccess_config="-DHTACCESS_CONFIG"
-    MODSEC_EXTRA_CFLAGS="$MODSEC_EXTRA_CFLAGS $htaccess_config"
-  else
-    htaccess_config=
-  fi
-],
-[
-  htaccess_config=
-])
-
-# Enable phase-1 in post_read_request
-AC_ARG_ENABLE(request-early,
-              AS_HELP_STRING([--enable-request-early],
-                             [Place phase1 into post_read_request hook. default is hook_request_early]),
-[
-  if test "$enableval" != "no"; then
-    request_early="-DREQUEST_EARLY"
-    MODSEC_EXTRA_CFLAGS="$MODSEC_EXTRA_CFLAGS $request_early"
-  else
-    request_early=
-  fi
-],
-[
-  request_early='-DREQUEST_EARLY'
-])
-
-# Ignore configure errors
-AC_ARG_ENABLE(errors,
-              AS_HELP_STRING([--disable-errors],
-                             [Disable errors during configure.]),
-[
-  if test "$enableval" != "no"; then
-    report_errors=1
-  else
-    report_errors=0
-  fi
-],
-[
-  report_errors=1
-])
-
-# Verbose output
-AC_ARG_ENABLE(verbose-output,
-              AS_HELP_STRING([--enable-verbose-output],
-                             [Enable more verbose configure output.]),
-[
-  if test "$enableval" != "no"; then
-    verbose_output=1
-  else
-    verbose_output=0
-  fi
-],
-[
-  verbose_output=0
-])
-
-# Strict Compile
-AC_ARG_ENABLE(strict-compile,
-              AS_HELP_STRING([--enable-strict-compile],
-                             [Enable strict compilation (warnings are errors).]),
-[
-  if test "$enableval" != "no"; then
-    strict_compile="-std=c99 -Wstrict-overflow=1 -Wextra -Wno-missing-field-initializers -Wshadow -Wpointer-arith -Wstrict-prototypes -Wmissing-prototypes -Wno-unused-parameter -Wformat -Wformat-security -Werror -fstack-protector -D_FORTIFY_SOURCE=2"
-    MODSEC_EXTRA_CFLAGS="$MODSEC_EXTRA_CFLAGS $strict_compile"
-  else
-    strict_compile=
-  fi
-],
-[
-  strict_compile=
-])
-
-# DEBUG_CONF
-AC_ARG_ENABLE(debug-conf,
-              AS_HELP_STRING([--enable-debug-conf],
-                             [Enable debug during configuration.]),
-[
-  if test "$enableval" != "no"; then
-    debug_conf="-DDEBUG_CONF"
-    MODSEC_EXTRA_CFLAGS="$MODSEC_EXTRA_CFLAGS $debug_conf"
-  else
-    debug_conf=
-  fi
-],
-[
-  debug_conf=
-])
-
-# CACHE_DEBUG
-AC_ARG_ENABLE(debug-cache,
-              AS_HELP_STRING([--enable-debug-cache],
-                             [Enable debug for transformation caching.]),
-[
-  if test "$enableval" != "no"; then
-    debug_cache="-DCACHE_DEBUG"
-    MODSEC_EXTRA_CFLAGS="$MODSEC_EXTRA_CFLAGS $debug_cache"
-  else
-    debug_cache=
-  fi
-],
-[
-  debug_cache=
-])
-
-# DEBUG_ACMP
-AC_ARG_ENABLE(debug-acmp,
-              AS_HELP_STRING([--enable-debug-acmp],
-                             [Enable debugging acmp code.]),
-[
-  if test "$enableval" != "no"; then
-    debug_acmp="-DDEBUG_ACMP"
-    MODSEC_EXTRA_CFLAGS="$MODSEC_EXTRA_CFLAGS $debug_acmp"
-  else
-    debug_acmp=
-  fi
-],
-[
-  debug_acmp=
-])
-
-# DEBUG_MEM
-AC_ARG_ENABLE(debug-mem,
-              AS_HELP_STRING([--enable-debug-mem],
-                             [Enable debug during configuration.]),
-[
-  if test "$enableval" != "no"; then
-    debug_mem="-DDEBUG_MEM"
-    MODSEC_EXTRA_CFLAGS="$MODSEC_EXTRA_CFLAGS $debug_mem"
-  else
-    debug_mem=
-  fi
-],
-[
-  debug_mem=
-])
-
-# PERFORMANCE_MEASUREMENT
-AC_ARG_ENABLE(performance-measurement,
-              AS_HELP_STRING([--enable-performance-measurement],
-                             [Enable performance-measurement stats.]),
-[
-  if test "$enableval" != "no"; then
-    perf_meas="-DPERFORMANCE_MEASUREMENT"
-    MODSEC_EXTRA_CFLAGS="$MODSEC_EXTRA_CFLAGS $perf_meas"
-  else
-    perf_meas=
-  fi
-],
-[
-  perf_meas=
-])
-
-# NO_MODSEC_API
-AC_ARG_ENABLE(modsec-api,
-              AS_HELP_STRING([--disable-modsec-api],
-                             [Disable the API; compiling against some older Apache versions require this.]),
-[
-  if test "$enableval" != "yes"; then
-    modsec_api="-DNO_MODSEC_API"
-    MODSEC_EXTRA_CFLAGS="$MODSEC_EXTRA_CFLAGS $modsec_api"
-  else
-    modsec_api=
-  fi
-],
-[
-  modsec_api=
-])
-
-# Find apxs
-AC_MSG_NOTICE(looking for Apache module support via DSO through APXS)
-AC_ARG_WITH(apxs,
-            [AS_HELP_STRING([[--with-apxs=FILE]],
-                            [FILE is the path to apxs; defaults to "apxs".])],
-[
-  if test "$withval" = "yes"; then
-    APXS=apxs
-  else
-    APXS="$withval"
-  fi
-])
-
-if test -z "$APXS"; then
-  for i in /usr/local/apache22/bin \
-           /usr/local/apache2/bin \
-           /usr/local/apache/bin \
-           /usr/local/sbin \
-           /usr/local/bin \
-           /usr/sbin \
-           /usr/bin;
-  do
-    if test -f "$i/apxs2"; then
-      APXS="$i/apxs2"
-      break
-    elif test -f "$i/apxs"; then
-      APXS="$i/apxs"
-      break
+    AC_PATH_PROG([YACC_INST], $YACC)
+    if test ! -f "$srcdir/gram.c"; then
+        if test -z "$YACC_INST"; then
+            AC_MSG_ERROR([yacc not found - unable to compile ModSecurity])
+        fi
     fi
-  done
 fi
 
-# arbitrarily picking the same version subversion looks for, don't know how
-# accurate this really is, but at least it'll force us to have apache2...
-HTTPD_WANTED_MMN=20020903
 
-if test -n "$APXS" -a "$APXS" != "no" -a -x "$APXS" ; then
-  APXS_INCLUDE="`$APXS -q INCLUDEDIR`"
-  if test -r $APXS_INCLUDE/httpd.h; then
-    AC_MSG_NOTICE(found apxs at $APXS)
-    AC_MSG_NOTICE(checking httpd version)
-    AC_EGREP_CPP(VERSION_OK,
-    [
-#include "$APXS_INCLUDE/ap_mmn.h"
-#if AP_MODULE_MAGIC_AT_LEAST($HTTPD_WANTED_MMN,0)
-VERSION_OK
-#endif],
-    [AC_MSG_NOTICE(httpd is recent enough)],
-    [
-     if test "$report_errors" -eq 1; then
-       AC_MSG_ERROR(apache is too old, mmn must be at least $HTTPD_WANTED_MMN)
-     else
-       AC_MSG_NOTICE(apache is too old, mmn must be at least $HTTPD_WANTED_MMN)
-     fi
+# Decide if we want to build the tests or not.
+buildTestUtilities=false
+if test "x$YAJL_FOUND" = "x1"; then
+    # Regression tests will not be able to run without the logging support.
+    # But we still have the unit tests.
+    # if test "$debugLogs" = "true"; then
+        buildTestUtilities=true
+    # fi
+fi
+
+
+AM_CONDITIONAL([TEST_UTILITIES], [test $buildTestUtilities = true])
+if test $buildTestUtilities = true; then
+    if test $debugLogs = true; then
+        if test -f ./test/test-list.sh; then
+            TEST_CASES=`./test/test-list.sh`
+        fi
+    fi
+fi
+
+AM_CONDITIONAL([EXAMPLES], [test $buildExamples = true])
+AM_CONDITIONAL([BUILD_PARSER], [test $buildParser = true])
+AM_CONDITIONAL([USE_MUTEX_ON_PM], [test $mutexPm = true])
+
+
+# General link options
+if test "$PLATFORM" != "MacOSX" -a "$PLATFORM" != "OpenBSD"; then
+    GLOBAL_LDADD="-lrt  "
+fi
+
+if test "$aflFuzzer" == "true"; then
+    FUZZ_CPPCFLAGS="-fsanitize=address -fsanitize-coverage=4 "
+    GLOBAL_LDADD="$GLOBAL_LDADD -fsanitize=address "
+    GLOBAL_CPPFLAGS="$GLOBAL_CPPFLAGS $FUZZ_CPPCFLAGS"
+    $buildExamples = false
+fi
+AC_SUBST(GLOBAL_LDADD)
+AC_SUBST(GLOBAL_CPPFLAGS)
+
+AM_CONDITIONAL([AFL_FUZZER], [test $aflFuzzer = true])
+
+GLOBAL_CFLAGS=""
+AC_SUBST(GLOBAL_CFLAGS)
+
+# Files to be generated via autotools.
+AC_CONFIG_FILES([\
+    modsecurity.pc \
+    Makefile \
+    doc/Makefile \
+    src/Makefile \
+    others/Makefile \
+    tools/Makefile \
+    tools/rules-check/Makefile
     ])
-  fi
-  APXS_INCLUDEDIR="`$APXS -q INCLUDEDIR`"
-  if test "$verbose_output" -eq 1; then AC_MSG_NOTICE(apxs INCLUDEDIR: $APXS_INCLUDEDIR); fi
-  # Make sure the include dir is used
-  if test -n "$APXS_INCLUDEDIR"; then
-    APXS_INCLUDES="-I${APXS_INCLUDEDIR} `$APXS -q INCLUDES` `$APXS -q EXTRA_INCLUDES`"
-  else
-    APXS_INCLUDES="`$APXS -q INCLUDES` `$APXS -q EXTRA_INCLUDES`"
-  fi
-  if test "$verbose_output" -eq 1; then AC_MSG_NOTICE(apxs INCLUDES: $APXS_INCLUDES); fi
-  APXS_CFLAGS=-I`$APXS -q INCLUDEDIR`
-  if test "$verbose_output" -eq 1; then AC_MSG_NOTICE(apxs CFLAGS: $APXS_CFLAGS); fi
-  APXS_LDFLAGS=
-  if test "$verbose_output" -eq 1; then AC_MSG_NOTICE(apxs LDFLAGS: $APXS_LDFLAGS); fi
-  APXS_LIBDIR="`$APXS -q LIBDIR`"
-  if test "$verbose_output" -eq 1; then AC_MSG_NOTICE(apxs LIBDIR: $APXS_LIBDIR); fi
-  # Make sure the lib dir is used
-  if test -n "$APXS_LIBDIR"; then
-    APXS_LIBS="-L${APXS_LIBDIR} `$APXS -q LIBS` `$APXS -q EXTRA_LIBS`"
-  else
-    APXS_LIBS="`$APXS -q LIBS` `$APXS -q EXTRA_LIBS`"
-  fi
-  if test "$verbose_output" -eq 1; then AC_MSG_NOTICE(apxs LIBS: $APXS_LIBS); fi
-  APXS_LIBTOOL="`$APXS -q LIBTOOL`"
-  if test "$verbose_output" -eq 1; then AC_MSG_NOTICE(apxs LIBTOOL: $APXS_LIBTOOL); fi
-  APXS_CC="`$APXS -q CC`"
-  if test "$verbose_output" -eq 1; then AC_MSG_NOTICE(apxs CC: $APXS_CC); fi
-  APXS_BINDIR="`$APXS -q BINDIR`"
-  if test "$verbose_output" -eq 1; then AC_MSG_NOTICE(apxs BINDIR: $APXS_BINDIR); fi
-  APXS_SBINDIR="`$APXS -q SBINDIR`"
-  if test "$verbose_output" -eq 1; then AC_MSG_NOTICE(apxs SBINDIR: $APXS_SBINDIR); fi
-  APXS_PROGNAME="`$APXS -q PROGNAME`"
-  if test "$verbose_output" -eq 1; then AC_MSG_NOTICE(apxs PROGNAME: $APXS_PROGNAME); fi
-  APXS_LIBEXECDIR="`$APXS -q LIBEXECDIR`"
-  if test "xx$APXS_LIBEXECDIR" = "xx"; then APXS_LIBEXECDIR="`$APXS -q LIBDIR`/modules"; fi
-  if test "$verbose_output" -eq 1; then AC_MSG_NOTICE(apxs LIBEXECDIR: $APXS_LIBEXECDIR); fi
-  APXS_MODULES=$APXS_LIBEXECDIR
-  if test "$verbose_output" -eq 1; then AC_MSG_NOTICE(apxs MODULES: $APXS_MODULES); fi
-  if test "$APXS_SBINDIR" = "/"; then
-    APXS_HTTPD="$APXS_SBINDIR/$APXS_PROGNAME"
-  else
-    APXS_HTTPD="$APXS_SBINDIR/$APXS_PROGNAME"
-  fi
-  if test "$verbose_output" -eq 1; then AC_MSG_NOTICE(apxs HTTPD: $APXS_HTTPD); fi
-else
-  if test "$report_errors" -eq 1; then
-    AC_MSG_ERROR(couldn't find APXS)
-  else
-    AC_MSG_NOTICE(couldn't find APXS)
-  fi
-fi
 
-### Build *EXTRA_CFLAGS vars
+AM_COND_IF([TEST_UTILITIES],
+       [AC_CONFIG_FILES([test/Makefile test/benchmark/Makefile])])
 
-# Allow overriding EXTRA_CFLAGS
-if $ENV_CMD | $GREP "^EXTRA_CFLAGS" > /dev/null 2>&1; then
-  if test -z "$debug_mem"; then
-    EXTRA_CFLAGS="$EXTRA_CFLAGS $strict_compile"
-  fi
-else
-  if test -n "$debug_mem"; then
-    EXTRA_CFLAGS="-O0 -g -Wall"
-  else
-    EXTRA_CFLAGS="-O2 -g -Wall $strict_compile"
-  fi
-fi
+AM_COND_IF([EXAMPLES],
+       [AC_CONFIG_FILES([ \
+            examples/Makefile \
+            examples/simple_example_using_c/Makefile \
+            examples/multiprocess_c/Makefile \
+            examples/reading_logs_with_offset/Makefile \
+            examples/reading_logs_via_rule_message/Makefile \
+            examples/using_bodies_in_chunks/Makefile \
+            ])])
 
-MODSEC_EXTRA_CFLAGS="$pcre_study $pcre_match_limit $pcre_match_limit_recursion $pcre_jit $request_early $htaccess_config $lua_cache $debug_conf $debug_cache $debug_acmp $debug_mem $perf_meas $modsec_api $cpu_type"
+AM_COND_IF([AFL_FUZZER],
+       [AC_CONFIG_FILES([test/fuzzer/Makefile])])
 
-APXS_WRAPPER=build/apxs-wrapper
-APXS_EXTRA_CFLAGS=""
-for f in $EXTRA_CFLAGS; do
-    APXS_EXTRA_CFLAGS="$APXS_EXTRA_CFLAGS -Wc,$f"
-done;
-MODSEC_APXS_EXTRA_CFLAGS=""
-for f in $MODSEC_EXTRA_CFLAGS; do
-    MODSEC_APXS_EXTRA_CFLAGS="$MODSEC_APXS_EXTRA_CFLAGS -Wc,$f"
-done;
+AM_COND_IF([BUILD_PARSER],
+       [AC_CONFIG_FILES([src/parser/Makefile])])
 
-### Substitute the vars
 
-AC_SUBST(TOPLEVEL_SUBDIRS)
-AC_SUBST(EXTRA_CFLAGS)
-AC_SUBST(MODSEC_EXTRA_CFLAGS)
-AC_SUBST(APXS)
-AC_SUBST(APXS_WRAPPER)
-AC_SUBST(APXS_INCLUDEDIR)
-AC_SUBST(APXS_INCLUDES)
-AC_SUBST(APXS_EXTRA_CFLAGS)
-AC_SUBST(MODSEC_APXS_EXTRA_CFLAGS)
-AC_SUBST(APXS_LDFLAGS)
-AC_SUBST(APXS_LIBS)
-AC_SUBST(APXS_CFLAGS)
-AC_SUBST(APXS_LIBTOOL)
-AC_SUBST(APXS_CC)
-AC_SUBST(APXS_LIBDIR)
-AC_SUBST(APXS_BINDIR)
-AC_SUBST(APXS_SBINDIR)
-AC_SUBST(APXS_PROGNAME)
-AC_SUBST(APXS_LIBEXECDIR)
-AC_SUBST(APXS_MODULES)
-AC_SUBST(APXS_HTTPD)
+AC_CONFIG_HEADERS([src/config.h])
 
-CHECK_PCRE()
-if test "$build_apache2_module" -ne 0 -o "$build_mlogc" -ne 0; then
-CHECK_APR()
-CHECK_APU()
-fi
-CHECK_LIBXML2()
-CHECK_LUA()
-#if test "$build_mlogc" -ne 0; then
-#CHECK_CURL()
-#fi
 
-# Check for YAJL libs (for JSON body processor)
-CHECK_YAJL()
-#AC_SEARCH_LIBS([yajl_alloc], [yajl])
-CHECK_SSDEEP()
-#AC_SEARCH_LIBS([fuzzy_hash_buf], [fuzzy])
+# Doxygen support
+DX_HTML_FEATURE(ON)
+DX_CHM_FEATURE(OFF)
+DX_CHI_FEATURE(OFF)
+DX_MAN_FEATURE(OFF)
+DX_RTF_FEATURE(OFF)
+DX_XML_FEATURE(OFF)
+DX_PDF_FEATURE(OFF)
+DX_PS_FEATURE(OFF)
 
-CFLAGS="$CFLAGS $APU_CFLAGS"
-AC_TRY_COMPILE(
-	[#include <apr_crypto.h>],
-	[
-          #if APU_HAVE_CRYPTO == 0
-          #error APR util was not compiled with crypto support.
-          #endif
-	],
-	[ AC_DEFINE([WITH_APU_CRYPTO], [1], [APR util was compiled with crypto support])
-	  MODSEC_EXTRA_CFLAGS="$MODSEC_EXTRA_CFLAGS -DWITH_APU_CRYPTO"
-	],
-	[ AC_MSG_WARN([APR util was not compiled with crypto support. SecRemoteRule will not support the parameter 'crypto']) ]
-)
+DX_INIT_DOXYGEN([ModSecurity],[doc/doxygen.cfg])
 
-# Current our unique download backend is curl, furhter we can support more.
-if test ! -z "${CURL_VERSION}"; then
-  AC_DEFINE([WITH_REMOTE_RULES], [1], [Enables SecRemoteRules support])
-  MODSEC_EXTRA_CFLAGS="$MODSEC_EXTRA_CFLAGS -DWITH_REMOTE_RULES"
-fi
+# make check-valgrind
+AX_VALGRIND_DFLT([sgcheck], [off])
+AX_VALGRIND_CHECK
 
-AC_CONFIG_FILES([Makefile])
-AC_CONFIG_FILES([tools/Makefile])
-if test "$build_alp2" -ne 0; then
-AC_CONFIG_FILES([alp2/Makefile])
-fi
-if test "$build_apache2_module" -ne 0; then
-AC_CONFIG_FILES([apache2/Makefile])
-fi
-if test "$build_standalone_module" -ne 0; then
-AC_CONFIG_FILES([standalone/Makefile])
-AC_CONFIG_FILES([nginx/modsecurity/config])
-fi
-if test "$build_extentions" -ne 0; then
-AC_CONFIG_FILES([ext/Makefile])
-fi
-AC_CONFIG_FILES([build/apxs-wrapper], [chmod +x build/apxs-wrapper])
-if test -e "$PERL"; then
-    if test "$build_mlogc" -ne 0; then
-        AC_CONFIG_FILES([mlogc/mlogc-batch-load.pl], [chmod +x mlogc/mlogc-batch-load.pl])
-        AC_CONFIG_FILES([tests/regression/misc/40-secRemoteRules.t])
-        AC_CONFIG_FILES([tests/regression/misc/50-ipmatchfromfile-external.t])
-        AC_CONFIG_FILES([tests/regression/misc/60-pmfromfile-external.t])
-    fi
-    AC_CONFIG_FILES([tests/run-unit-tests.pl], [chmod +x tests/run-unit-tests.pl])
-    AC_CONFIG_FILES([tests/run-regression-tests.pl], [chmod +x tests/run-regression-tests.pl])
-    AC_CONFIG_FILES([tests/gen_rx-pm.pl], [chmod +x tests/gen_rx-pm.pl])
-    AC_CONFIG_FILES([tests/csv_rx-pm.pl], [chmod +x tests/csv_rx-pm.pl])
-    AC_CONFIG_FILES([tests/regression/server_root/conf/httpd.conf])
-
-    # Perl based tools
-    AC_CONFIG_FILES([tools/rules-updater.pl], [chmod +x tools/rules-updater.pl])
-fi
-if test "$build_mlogc" -ne 0; then
-    AC_CONFIG_FILES([mlogc/Makefile])
-fi
-AC_CONFIG_FILES([tests/Makefile])
-
+# Generate the files.
 AC_OUTPUT
+
+
+# Print a fancy summary
+echo " "
+echo " "
+echo "ModSecurity - ${MSC_GIT_VERSION} for $PLATFORM"
+echo " "
+echo " Mandatory dependencies"
+echo -n "   + libInjection                                  ...."
+echo LIBINJECTION_VERSION
+echo -n "   + SecLang tests                                 ...."
+echo SECLANG_TEST_VERSION
+
+echo " "
+echo " Optional dependencies"
+
+
+
+## GeoIP - MaxMind
+if test "x$GEOIP_FOUND" = "x0" && test "x$MAXMIND_FOUND" = "x0"; then
+    echo "   + GeoIP/MaxMind                                 ....not found"
+fi
+if test "x$GEOIP_FOUND" = "x1" || test "x$MAXMIND_FOUND" = "x1"; then
+    echo -n "   + GeoIP/MaxMind                                 ....found "
+    echo ""
+    if test "x$MAXMIND_FOUND" = "x1"; then
+        echo "      * (MaxMind) v${MAXMIND_VERSION}"
+        echo "         ${MAXMIND_DISPLAY}"
+    fi
+    if test "x$GEOIP_FOUND" = "x1"; then
+        echo "      * (GeoIP) v${GEOIP_VERSION}"
+        echo "         ${GEOIP_DISPLAY}"
+    fi
+fi
+if test "x$GEOIP_FOUND" = "x2" && test "x$MAXMIND_FOUND" = "x2"; then
+    echo "   + GeoIP/MaxMind                                 ....disabled"
+fi
+
+
+## LibCurl
+if test "x$CURL_FOUND" = "x0"; then
+    echo "   + LibCURL                                       ....not found"
+fi
+if test "x$CURL_FOUND" = "x1"; then
+    echo -n "   + LibCURL                                       ....found "
+    if ! test "x$CURL_VERSION" = "x"; then
+        echo "v${CURL_VERSION}"
+    else
+        echo ""
+    fi
+    echo "      ${CURL_DISPLAY}"
+fi
+if test "x$CURL_FOUND" = "x2"; then
+    echo "   + LibCURL                                       ....disabled"
+fi
+
+
+## YAJL
+if test "x$YAJL_FOUND" = "x0"; then
+    echo "   + YAJL                                          ....not found"
+fi
+if test "x$YAJL_FOUND" = "x1"; then
+    echo -n "   + YAJL                                          ....found "
+    if ! test "x$YAJL_VERSION" = "x"; then
+        echo "v${YAJL_VERSION}"
+    else
+        echo ""
+    fi
+    echo "      ${YAJL_DISPLAY}"
+fi
+if test "x$YAJL_FOUND" = "x2"; then
+    echo "   + YAJL                                          ....disabled"
+fi
+
+
+## LMDB
+if test "x$LMDB_FOUND" = "x0"; then
+    echo "   + LMDB                                          ....not found"
+fi
+if test "x$LMDB_FOUND" = "x1"; then
+    echo -n "   + LMDB                                          ....found "
+    if ! test "x$LMDB_VERSION" = "x"; then
+        echo "v${LMDB_VERSION}"
+    else
+        echo ""
+    fi
+    echo "      ${LMDB_DISPLAY}"
+fi
+if test "x$LMDB_FOUND" = "x2"; then
+    echo "   + LMDB                                          ....disabled"
+fi
+
+
+## libxml2
+if test "x$LIBXML2_FOUND" = "x0"; then
+    echo "   + LibXML2                                       ....not found"
+fi
+if test "x$LIBXML2_FOUND" = "x1"; then
+    echo -n "   + LibXML2                                       ....found "
+    if ! test "x$LIBXML2_VERSION" = "x"; then
+        echo "v${LIBXML2_VERSION}"
+    else
+        echo ""
+    fi
+    echo "      ${LIBXML2_DISPLAY}"
+fi
+if test "x$LIBXML2_FOUND" = "x2"; then
+    echo "   + LibXML2                                       ....disabled"
+fi
+
+
+## SSDEEP
+if test "x$SSDEEP_FOUND" = "x0"; then
+    echo "   + SSDEEP                                        ....not found"
+fi
+if test "x$SSDEEP_FOUND" = "x1"; then
+    echo -n "   + SSDEEP                                        ....found "
+    if ! test "x$SSDEEP_VERSION" = "x"; then
+        echo "v${SSDEEP_VERSION}"
+    else
+        echo ""
+    fi
+    echo "      ${SSDEEP_DISPLAY}"
+fi
+if test "x$SSDEEP_FOUND" = "x2"; then
+    echo "   + SSDEEP                                        ....disabled"
+fi
+
+## LUA
+if test "x$LUA_FOUND" = "x0"; then
+    echo "   + LUA                                           ....not found"
+fi
+if test "x$LUA_FOUND" = "x1"; then
+    echo -n "   + LUA                                           ....found "
+    if ! test "x$LUA_VERSION" = "x"; then
+        echo "v${LUA_VERSION}"
+    else
+        echo ""
+    fi
+    echo "      ${LUA_DISPLAY}"
+fi
+if test "x$LUA_FOUND" = "x2"; then
+    echo "   + LUA                                           ....disabled"
+fi
+
+
+echo " "
+echo " Other Options"
+if test $buildTestUtilities = true; then
+    if test $debugLogs = true; then
+        echo "   + Test Utilities                                ....enabled"
+    else
+        echo "   + Test Utilities                                ....partially"
+    fi
+else
+    echo "   + Test Utilities                                ....disabled"
+fi
+if test $debugLogs = true; then
+    echo "   + SecDebugLog                                   ....enabled"
+else
+    echo "   + SecDebugLog                                   ....disabled"
+fi
+
+if test "$aflFuzzer" = "true"; then
+    echo "   + afl fuzzer                                    ....enabled"
+    echo "    ($FUZZ_CPPCFLAGS)"
+else
+    echo "   + afl fuzzer                                    ....disabled"
+fi
+
+if test "$buildExamples" = "true"; then
+    echo "   + library examples                              ....enabled"
+else
+    echo "   + library examples                              ....disabled"
+fi
+
+if test "$buildParser" = "true"; then
+    echo "   + Building parser                               ....enabled"
+else
+    echo "   + Building parser                               ....disabled"
+fi
+
+if test "$mutexPm" = "true"; then
+    echo "   + Treating pm operations as critical section    ....enabled"
+else
+    echo "   + Treating pm operations as critical section    ....disabled"
+fi
+
+
+echo " "
+
+
+if test "$aflFuzzer" = "true"; then
+    echo "WARNING: afl fuzzer was enabled. Make sure you are using the"
+    echo " 'afl-clang-fast' as the compiler, otherwise the compilation"
+    echo "  will fail."
+    echo " "
+    echo " You can set the compiler using:"
+    echo " "
+    echo "  $ export CXX=afl-clang-fast++ "
+    echo "  $ export CC=afl-clang-fast "
+    echo " "
+fi
+
